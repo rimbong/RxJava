@@ -1,4 +1,8 @@
+import java.util.ArrayList;
+
 import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 /* 
  * Reactive Programming이란
@@ -62,14 +66,28 @@ import io.reactivex.rxjava3.core.Observable;
  * RxJava의 스케줄러는 RxJava의 코드가 어느 스레드에서 실행될 것인지 지정하는 역할을 한다. RxJava만 사용한다고 비동기 처리가 되는 것이 아니라, 
  * 스케줄러를 통해 스레드를 분리해주어야 비동기 작업이 가능한 것이다. 스케줄러의 지정은 RxJava의 subscribeOn 과 observeOn 연산자를 통해 가능하다.
  * 
- * subscribeOn은 Observable이 데이터 흐름을 발생시키고 연산하는 스레드를 지정할 수 있고
- * observeOn은 Observable이 Observer에게 알림을 보내는 스레드를 지정할 수 있다.
+ * subscribeOn의 동작 방식
+ * subscribeOn은 Observable의 소스에서 데이터가 발행되는 스레드를 지정합니다.
+ * subscribeOn은 데이터 소스에서 발생하는 작업 전체에 영향을 미칩니다.
+ * 즉, Observable이 구독될 때 구독 과정이 지정된 스레드에서 시작됩니다. 
  * 
+ * observeOn의 동작 방식
+ * observeOn은 이후에 발생하는 모든 연산자의 실행 스레드를 변경합니다.
+ * observeOn을 호출한 이후의 모든 연산자는 지정된 스레드에서 실행됩니다.
+ * 여러 번 호출하면 각 observeOn 호출 이후의 연산자들에 대해 새로운 스레드가 적용됩니다.
+ * 
+ * 차이
+ * subscribeOn은 여러번 호출되더라도 맨 처음의 호출만 영향을 주며 어디에 위치하든 상관없다
+ * observeOn은 여러번 호출될 수 있으며 이후에 실행되는 연산에 영향을 주므로 위치가 중요하다.
+ * 
+ * 요약
+ * subscribeOn은 데이터 흐름의 시작 지점에서 스레드를 지정합니다. 초기 데이터 소스와 관련된 작업이 해당 스레드에서 실행됩니다.
+ * observeOn은 호출된 이후의 모든 연산자들이 실행되는 스레드를 지정합니다. 이 연산자들은 새로운 스레드에서 실행됩니다.
  * 
  */
 public class Main {
 	public static void main(String[] args) {
-		test2();
+		test4();
 	}
 	
 	static void test1(){
@@ -97,4 +115,77 @@ public class Main {
 		        .subscribe(System.out::println);
 	}
 	
+    static void test3(){
+        Single<String> single = Single.create((emitter) -> {
+            emitter.onSuccess("good");
+            emitter.onSuccess("good2");
+        });
+
+        single.subscribe((params) -> {
+           System.out.println(params); 
+        });
+    }
+
+    static class MyShape{
+        String color;
+        String shape;
+    
+        MyShape(String color, String shape) {
+            this.color = color;
+            this.shape = shape;
+        }
+    
+        @Override
+        public String toString() {
+            return "MyShape{" +
+                    "color='" + color + '\'' +
+                    ", shape='" + shape + '\'' +
+                    '}';
+        }
+    }
+    
+    static void printData(String message) {
+        System.out.println(""+Thread.currentThread().getName()+" | "+message+" | ");
+    }
+
+    static void printData(String message, Object obj) {
+        System.out.println(""+Thread.currentThread().getName()+" | "+message+" | " +obj.toString());
+    }
+    static void test4(){
+        ArrayList<MyShape> shapes = new ArrayList<>();
+        shapes.add(new Main.MyShape("Red", "Ball"));
+        shapes.add(new Main.MyShape("Green", "Ball"));
+        shapes.add(new Main.MyShape("Blue", "Ball"));
+
+        Observable.fromIterable(shapes)
+                .subscribeOn(Schedulers.computation()) // (A)
+                .subscribeOn(Schedulers.io()) // (B)
+                // 1. 현재 스레드(main)에서 Observable을 구독
+                .doOnSubscribe(data -> printData("doOnSubscribe"))
+                // 2. (A)에 의해 computation 스케줄러에서 데이터 흐름 발생, (B)는 영향 X ()
+                .doOnNext(data -> printData("doOnNext", data))
+                // 3. (C)에 의해 map 연산이 new thread에서 실행
+                .observeOn(Schedulers.newThread()) // (C)
+                .map(data -> {
+                    data.shape = "Square";
+                    return data;
+                })
+                .doOnNext(data -> printData("map(Square)", data))
+                // 4. (D)에 의해 map 연산이 new thread에서 실행
+                .observeOn(Schedulers.newThread()) // (D)
+                .map(data -> {
+                    data.shape = "Triangle";
+                    return data;
+                })
+                .doOnNext(data -> printData("map(Triangle)", data))
+                // 5. (E)에 의해 new thread에서 데이터 소비(subscribe)
+                .observeOn(Schedulers.newThread()) // (E)
+                .subscribe(data -> printData("subscribe", data));
+    
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 }
