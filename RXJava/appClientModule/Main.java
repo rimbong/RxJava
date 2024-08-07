@@ -1,6 +1,7 @@
 import java.util.ArrayList;
 
 import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
@@ -42,8 +43,8 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  * RxJava2와 RxJava3에는 데이터 소스를 나타내는 5가지의 기본 클래스가 있다.
  * 
  * Observable : 가장 기본적인 형태, 0개~N개의 데이터 발행, BackPressure 없음
- * Single : 단 1개의 데이터, 혹은 오류 발행
- * Completable : 성공 혹은 실패했다는 결과만 발행
+ * Single : 단 1개의류 발행
+ * Completable : 성공 혹은 실패했다 데이터, 혹은 오는 결과만 발행
  * Maybe : 0개 또는 1개 완료, 오류
  * Flowable : 0개~N개의 데이터 발행, BackPressure 존재
  * 
@@ -87,7 +88,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  */
 public class Main {
 	public static void main(String[] args) {
-		test4();
+		test5();
 	}
 	
 	static void test1(){
@@ -160,7 +161,7 @@ public class Main {
         Observable.fromIterable(shapes)
                 .subscribeOn(Schedulers.computation()) // (A)
                 .subscribeOn(Schedulers.io()) // (B)
-                // 1. 현재 스레드(main)에서 Observable을 구독
+                // 1. 기본적으로 현재 스레드(main)에서 Observable을 구독
                 .doOnSubscribe(data -> printData("doOnSubscribe"))
                 // 2. (A)에 의해 computation 스케줄러에서 데이터 흐름 발생, (B)는 영향 X ()
                 .doOnNext(data -> printData("doOnNext", data))
@@ -187,5 +188,44 @@ public class Main {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    static void test5(){
+        ArrayList<MyShape> shapes = new ArrayList<>();
+        shapes.add(new Main.MyShape("Red", "Ball"));
+        shapes.add(new Main.MyShape("Green", "Ball"));
+        shapes.add(new Main.MyShape("Blue", "Ball"));
+        Observable<MyShape> observable1 = Observable.fromIterable(shapes);
+                                        // .subscribeOn(Schedulers.computation())
+                                        // .observeOn(Schedulers.newThread())
+                                        
+
+        System.out.println("11111111111");
+
+        Observable<MyShape> observable2 = Observable.fromIterable(shapes);
+
+        observable1 = observable1.map((data) -> {
+            data.shape = "aaa" ;
+            return data;
+        });
+        observable1
+        // Schedulers.computation() 에서 shape 이 "aaa"로 바뀌고 발행되는 작업이 이루어짐
+        .doOnNext(data -> printData("map1(Triangle)", data)) 
+        .subscribeOn(Schedulers.computation())
+        // Schedulers.computation() 에서 shape 이 "aaa"로 바뀌고 발행되는 작업이 이루어짐
+        .doOnNext(data -> printData("map2(Triangle)", data))
+        .observeOn(Schedulers.newThread())
+        // Schedulers.newThread() 에서 데이터가 발행되어짐
+        .subscribe(data -> printData("subscribe", data));
+        
+        // observable1 과 observable2는 서로 비동기로 발생함.
+        observable2.subscribe(data -> printData("subscribe", data));
+
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
     }
 }
