@@ -85,10 +85,26 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  * subscribeOn은 데이터 흐름의 시작 지점에서 스레드를 지정합니다. 초기 데이터 소스와 관련된 작업이 해당 스레드에서 실행됩니다.
  * observeOn은 호출된 이후의 모든 연산자들이 실행되는 스레드를 지정합니다. 이 연산자들은 새로운 스레드에서 실행됩니다.
  * 
+ * doOnSubscribe의
+ * doOnSubscribe의 실행 위치는 크게 두 가지 요인에 의해 결정됩니다:
+ *
+ * 구독이 시작되는 시점의 스레드:
+ * 
+ * 1) 기본적으로 doOnSubscribe는 **구독(subscribe)**이 호출된 시점의 스레드에서 실행됩니다. 
+ * 이때, 별도로 observeOn 연산자가 적용되지 않았다면, 기본적으로 구독을 시작한 스레드에서 실행됩니다.
+ * 
+ * 2) observeOn 연산자의 위치:
+ * 만약 doOnSubscribe 앞에 observeOn 연산자가 있다면, observeOn에서 지정한 스케줄러의 스레드에서 doOnSubscribe가 실행됩니다.
+ * 이 경우 subscribeOn이 영향을 미치지 않고, observeOn이 위치한 이후의 연산자들이 observeOn에 지정된 스레드에서 실행됩니다.
+ * 
+ * 결론적으로:
+ * 기본적으로 doOnSubscribe는 subscribe가 호출된 스레드에서 실행됩니다.
+ * 하지만, doOnSubscribe 이전에 observeOn이 위치하면 그 연산자에 의해 지정된 스케줄러의 스레드에서 실행될 수 있습니다.
+ * 따라서, doOnSubscribe의 스레드 결정은 해당 코드의 실행 컨텍스트와 observeOn의 위치에 따라 달라집니다.
  */
 public class Main {
 	public static void main(String[] args) {
-		test5();
+		test4();
 	}
 	
 	static void test1(){
@@ -161,12 +177,15 @@ public class Main {
         Observable.fromIterable(shapes)
                 .subscribeOn(Schedulers.computation()) // (A)
                 .subscribeOn(Schedulers.io()) // (B)
-                // 1. 기본적으로 현재 스레드(main)에서 Observable을 구독
-                .doOnSubscribe(data -> printData("doOnSubscribe"))
+                // 1. 기본적으로 현재 스레드(main)에서 Observable을 구독 할때 실행 되며, 실행 되는 순간 작업해야 햘 것들을 등록한다
+                
                 // 2. (A)에 의해 computation 스케줄러에서 데이터 흐름 발생, (B)는 영향 X ()
                 .doOnNext(data -> printData("doOnNext", data))
-                // 3. (C)에 의해 map 연산이 new thread에서 실행
+                // 3. (C)에 해 map 연산이 new thread에서 실행
                 .observeOn(Schedulers.newThread()) // (C)
+                .doOnSubscribe(data -> {printData("doOnSubscribe");
+	            	System.out.println("aaaa");
+	            })
                 .map(data -> {
                     data.shape = "Square";
                     return data;
