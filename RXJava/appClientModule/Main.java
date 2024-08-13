@@ -178,16 +178,17 @@ public class Main {
                 .subscribeOn(Schedulers.computation()) // (A)
                 .subscribeOn(Schedulers.io()) // (B)
                 // 1. 기본적으로 현재 스레드(main)에서 Observable을 구독 할때 실행 되며, 실행 되는 순간 작업해야 햘 것들을 등록한다
-                
+                .doOnSubscribe(data -> {printData("doOnSubscribe");
+	            	System.out.println("aaaa");
+	            })
                 // 2. (A)에 의해 computation 스케줄러에서 데이터 흐름 발생, (B)는 영향 X ()
                 .doOnNext(data -> printData("doOnNext", data))
                 // 3. (C)에 해 map 연산이 new thread에서 실행
                 .observeOn(Schedulers.newThread()) // (C)
-                .doOnSubscribe(data -> {printData("doOnSubscribe");
-	            	System.out.println("aaaa");
-	            })
                 .map(data -> {
                     data.shape = "Square";
+                    // 여기서 다른 자원들은 blocking이 걸리고 Red 먼저 소비되는걸 확인 할 수 있다.                    
+                    Thread.sleep(5000); 
                     return data;
                 })
                 .doOnNext(data -> printData("map(Square)", data))
@@ -203,7 +204,7 @@ public class Main {
                 .subscribe(data -> printData("subscribe", data));
     
         try {
-            Thread.sleep(5000);
+            Thread.sleep(50000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
