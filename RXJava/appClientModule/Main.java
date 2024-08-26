@@ -1,7 +1,10 @@
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 
 import io.reactivex.rxjava3.core.Observable;
-import io.reactivex.rxjava3.core.Scheduler;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
@@ -104,7 +107,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  */
 public class Main {
 	public static void main(String[] args) {
-		test4();
+		test7();
 	}
 	
 	static void test1(){
@@ -247,5 +250,147 @@ public class Main {
             e.printStackTrace();
         }
 
+    }
+
+    static void test6(){
+        List<Callable<String>> callables = Arrays.asList(
+                () -> {
+                    TimeUnit.SECONDS.sleep(1);
+                    return "Result from Callable 1";
+                },
+                () -> {
+                    TimeUnit.SECONDS.sleep(2);
+                    return "Result from Callable 2";
+                },
+                () -> {
+                    TimeUnit.SECONDS.sleep(3);
+                    return "Result from Callable 3";
+                }
+            );
+
+        /* 
+            Observable.fromCallable(callable):
+            이 메서드는 Callable을 Observable로 변환하고, 
+            이 Observable이 구독(subscribe)될 때 Callable이 실행됩니다.
+         */
+        // Observable 리스트 생성
+        List<Observable<String>> observables = Observable.fromIterable(callables)
+            .map(callable -> Observable.fromCallable(callable)
+                    .subscribeOn(Schedulers.io()))
+            .toList()
+            .blockingGet();
+
+        // Observable.zip을 사용해 모든 결과를 조합
+        Observable.zip(observables, results -> {
+            StringBuilder combinedResults = new StringBuilder();
+            for (Object result : results) {
+                combinedResults.append(result.toString()).append(", ");
+            }
+            return combinedResults.toString();
+        })
+        .subscribe(
+            result -> System.out.println("Combined result: " + result),
+            Throwable::printStackTrace
+        );
+
+        // 메인 스레드가 모든 작업이 완료될 때까지 대기
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static void test7(){
+          // Callable 리스트 정의
+        List<Callable<String>> callables = Arrays.asList(
+            () -> {
+                TimeUnit.SECONDS.sleep(1);
+                return "Result from Callable 1";
+            },
+            () -> {
+                TimeUnit.SECONDS.sleep(2);
+                return "Result from Callable 2";
+            },
+            () -> {
+                TimeUnit.SECONDS.sleep(3);
+                return "Result from Callable 3";
+            }
+        );
+
+        // Observable을 사용하여 각 Callable을 처리
+        Observable.fromIterable(callables)
+            .flatMapSingle(task -> 
+                Single.fromCallable(task)
+                      .subscribeOn(Schedulers.io()) // 각 Callable을 비동기적으로 실행
+            )
+            .subscribe(
+                result -> System.out.println("Received: " + result),
+                Throwable::printStackTrace,
+                () -> System.out.println("All tasks completed")
+            );
+
+        // 메인 스레드가 모든 작업이 완료될 때까지 대기
+        try {
+            Thread.sleep(6000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    static void test8(){   
+    // Callable 리스트 정의
+        List<Callable<String>> taskList = Arrays.asList(
+            () -> {
+                TimeUnit.SECONDS.sleep(3);
+                return "Result from Task 1";
+            },
+            () -> {
+                TimeUnit.SECONDS.sleep(1);
+                return "Result from Task 2";
+            },
+            () -> {
+                TimeUnit.SECONDS.sleep(2);
+                return "Result from Task 3";
+            }
+        );
+
+        // Observable을 사용하여 각 Callable을 처리하고 결과 병합
+        /* 
+            "병합" 의 실제 의미:
+            flatMapSingle을 사용하면, 각 Single이 병렬로 실행되어 결과를 방출합니다. 각 Single의 결과는 순서에 상관없이 동시에 발생할 수 있으며, 
+            그 결과들이 모여 하나의 List로 병합됩니다.
+            이 "병합"은 비동기 작업을 처리한 후, 모든 결과를 모아서 최종적으로 하나의 객체(여기서는 List<String>)로 만드는 과정을 의미합니다. 
+
+            "평탄화"란?
+            평탄화 전: 각 입력 값이 하나의 스트림(즉, 배열 또는 Observable)을 생성합니다. 이 내부 스트림들은 독립적으로 존재합니다.
+            평탄화 후: flatMap은 이 여러 개의 내부 스트림을 단일한 스트림으로 "평탄화"하여 하나로 이어 붙입니다. 
+            이로 인해 모든 내부 스트림의 결과가 순차적으로 방출되며, 결국 단일한 흐름으로 이어집니다.
+
+            요약
+            map: 입력 스트림의 각 요소를 하나의 출력 요소로 변환하고, 그 요소를 원래 순서로 스트림에 포함합니다.
+            flatMap: 입력 스트림의 각 요소를 여러 요소를 방출하는 스트림으로 변환하고, 그런 스트림들을 하나의 단일 스트림으로 병합하여 "평탄화"합니다.
+            
+        */
+
+        Observable.fromIterable(taskList)
+            .flatMapSingle(task -> 
+                Single.fromCallable(task)
+                      .subscribeOn(Schedulers.io()) // 각 Callable을 비동기적으로 실행
+            )
+            .toList() // 모든 결과를 리스트로 병합
+            .subscribe(
+                results -> System.out.println("Merged results: " + results),
+                error -> error.printStackTrace() // // Throwable::printStackTrace 대신 사용
+            );
+
+        // 메인 스레드가 모든 작업이 완료될 때까지 대기
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    
     }
 }
