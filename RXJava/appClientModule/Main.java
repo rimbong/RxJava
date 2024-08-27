@@ -1,11 +1,14 @@
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
+import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
 /* 
@@ -104,10 +107,19 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  * 기본적으로 doOnSubscribe는 subscribe가 호출된 스레드에서 실행됩니다.
  * 하지만, doOnSubscribe 이전에 observeOn이 위치하면 그 연산자에 의해 지정된 스케줄러의 스레드에서 실행될 수 있습니다.
  * 따라서, doOnSubscribe의 스레드 결정은 해당 코드의 실행 컨텍스트와 observeOn의 위치에 따라 달라집니다.
+ * 
+ * Disposable
+ * Disposable은 RxJava에서 비동기 스트림을 구독한 후, 해당 스트림을 종료하거나 구독을 해제(unsubscribe)할 때 사용하는 객체입니다.
+ * 
+ * CompositeDisposable이란?
+ * CompositeDisposable은 여러 개의 Disposable 객체를 모아서 한 번에 관리할 수 있는 클래스입니다.
+ * 이를 통해 모든 Disposable을 모아서, 특정 시점에 모든 스트림을 한꺼번에 해제할 수 있습니다. 
+ * 예를 들어, Android에서는 Activity나 Fragment가 종료될 때, 비동기 작업들을 안전하게 해제하기 위해 CompositeDisposable을 자주 사용합니다.
+ * 
  */
 public class Main {
 	public static void main(String[] args) {
-		test7();
+		test12();
 	}
 	
 	static void test1(){
@@ -127,6 +139,22 @@ public class Main {
             throwable -> System.err.println("Error: " + throwable), // onError 처리기
             () -> System.out.println("Completed") // onComplete 처리기
         );
+        
+        Observable<String> observable2 = Observable.create(emitter -> {
+            emitter.onNext("Hello2");
+            emitter.onNext("RxJava2");
+            emitter.onNext("3");
+            emitter.onComplete();
+            // onComplete 이후 데이터는 발행되지 않는다.
+            emitter.onNext("4");
+        });
+
+        // Observer (구독자) 생성
+        observable2.subscribe(
+            item -> System.out.println("Received: " + item), // onNext 처리기
+            throwable -> System.err.println("Error: " + throwable), // onError 처리기
+            () -> System.out.println("Completed") // onComplete 처리기
+        );
 	}
 
 	static void test2() {
@@ -142,6 +170,15 @@ public class Main {
         });
 
         single.subscribe((params) -> {
+           System.out.println(params); 
+        });
+        
+        Single<String> single2 = Single.create((emitter) -> {
+            emitter.onSuccess("good3");
+            emitter.onSuccess("good4");
+        });
+
+        single2.subscribe((params) -> {
            System.out.println(params); 
         });
     }
@@ -391,6 +428,157 @@ public class Main {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-    
     }
+    static void test9(){
+        /* 
+        Single.zip은 RxJava에서 두 개 이상의 Single을 조합하여 하나의 Single로 만들어주는 유용한 연산자입니다. 
+        각 Single의 결과를 조합하여 새로운 결과를 생성할 때 사용됩니다. 
+        zip 연산자는 각 Single의 결과를 하나의 객체로 결합하여 반환합니다. 
+        */
+        // 두 개의 Single 정의
+        Single<String> single1 = Single.just("Hello");
+        Single<Integer> single2 = Single.just(42);
+
+        // 두 Single을 병렬실행 후 zip 연산자로 결합
+        Single<String> zippedSingle = Single.zip(
+            single1,
+            single2,
+            (string, number) -> string + " world! The answer is " + number
+        );
+
+        // 결과 구독
+        zippedSingle.subscribe(
+            result -> System.out.println("Result: " + result),
+            Throwable::printStackTrace
+        );
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }   
+    static void test10(){
+        /* 
+            Single.zip을 사용하여 여러 개의 Single을 결합할 때, taskList와 같은 Single의 리스트를 다루는 
+            예제는 다음과 같은 상황에서 유용합니다. 
+            이 코드는 각 Single에서 결과를 받아서 하나의 HashMap을 생성하는 방식으로 활용됩니다. 
+        */
+        // 여러 개의 Single을 생성 (예를 들면, API 호출 결과 등)
+        List<Single<String>> taskList = List.of(
+            Single.fromCallable(() -> "Result1"),
+            Single.fromCallable(() -> "Result2"),
+            Single.fromCallable(() -> "Result3")
+        );
+
+        // Single.zip을 사용하여 여러 Single의 결과를 결합
+        /* 
+            Single.zip의 첫 번째 인자: Single.zip의 첫 번째 인자는 Single 객체들의 배열이나 리스트여야 합니다. 
+                                      RxJava에서는 일반적으로 Single.zip에 직접 Single 객체들을 전달하는 형태를 사용합니다.
+            
+            Function 사용: results는 Object[] 타입으로 전달됩니다. 각 결과는 순서에 따라 배열의 각 요소로 제공됩니다. 
+                          이 배열을 적절히 캐스팅하여 처리해야 합니다.
+        */
+        Single.zip(
+            taskList,
+            results -> {
+                HashMap<String, HashMap<String, String>> resultMap = new HashMap<>();
+                for (int i = 0; i < results.length; i++) {
+                    String result = (String) results[i];
+                    HashMap<String, String> innerMap = new HashMap<>();
+                    innerMap.put("result", result);
+                    resultMap.put("key" + i, innerMap);
+                }
+                return resultMap;
+            }
+        )
+        .subscribeOn(Schedulers.io())
+        .subscribe(
+            result -> System.out.println("Result Map: " + result),
+            Throwable::printStackTrace
+        );
+        
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
+    }   
+
+    static void test11(){
+        // 1초마다 숫자를 방출하는 Observable 생성
+        Observable<Long> observable = Observable.interval(1, TimeUnit.SECONDS);
+
+        // Observable을 구독하고 Disposable 객체를 받는다.
+        Disposable disposable = observable.subscribe(
+            item -> System.out.println("Received: " + item),
+            Throwable::printStackTrace,
+            () -> System.out.println("Done!")
+        );
+
+        // 5초 동안 대기
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // 5초 후 구독 해제 (스트림 종료)
+        disposable.dispose();
+        System.out.println("Disposed!");
+
+        // 추가로 3초를 기다려도 이벤트가 발생하지 않음을 확인
+        try {
+        	System.out.println("i am waiting");
+            Thread.sleep(3000);
+            System.out.println("end");
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }   
+
+    static void test12(){
+        // CompositeDisposable 생성
+        CompositeDisposable compositeDisposable = new CompositeDisposable();
+
+        // 첫 번째 Observable 생성 및 구독
+        Observable<Long> observable1 = Observable.interval(1, TimeUnit.SECONDS);
+        Disposable disposable1 = observable1.subscribe(
+            item -> System.out.println("Observable 1: " + item),
+            Throwable::printStackTrace
+        );
+
+        // 두 번째 Observable 생성 및 구독
+        Observable<Long> observable2 = Observable.interval(500, TimeUnit.MILLISECONDS);
+        Disposable disposable2 = observable2.subscribe(
+            item -> System.out.println("Observable 2: " + item),
+            Throwable::printStackTrace
+        );
+
+        // CompositeDisposable에 Disposable 추가
+        compositeDisposable.add(disposable1);
+        compositeDisposable.add(disposable2);
+
+        // 5초 동안 대기
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        // 모든 구독 해제
+        compositeDisposable.dispose();
+        System.out.println("All Disposables Disposed!");
+
+        // 추가로 3초를 기다려도 이벤트가 발생하지 않음을 확인
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }   
+
+    static void test13(){}   
+    static void test14(){}   
+    static void test15(){}   
 }
